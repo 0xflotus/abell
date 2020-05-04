@@ -9,24 +9,24 @@ program.version(require('../package.json').version);
 
 program
   .command('build')
-  .action(() => {
-    const programInfo = getBaseProgramInfo();
+  .action(async () => {
+    const programInfo = await getBaseProgramInfo();
     programInfo.logs = 'complete';
     programInfo.task = 'build';
-    action.build(programInfo);
+    await action.build(programInfo);
   });
 
 program
   .command('serve')
   .option('--port [port]', 'Serve on different port')
-  .action((command) => {
-    const programInfo = getBaseProgramInfo();
+  .action(async (command) => {
+    const programInfo = await getBaseProgramInfo();
     programInfo.port = command.port || 5000;
     programInfo.task = 'serve';
     programInfo.logs = 'minimum';
     programInfo.abellConfigs.destinationPath = '.debug';
     
-    action.serve(programInfo);
+    await action.serve(programInfo);
   })
 
 program.parse(process.argv);

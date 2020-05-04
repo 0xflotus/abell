@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const util = require('util');
+const readFile = util.promisify(fs.readFile);
 
 const browserSync = require('browser-sync');
 const chokidar = require('chokidar');
@@ -29,7 +31,7 @@ const {
  *  The build parameters are first calculated in index.js and the programInfo with all those parameters is passed
  */
 
-function build(programInfo) {
+async function build(programInfo) {
 
   if(programInfo.logs == 'complete') console.log("\n>> Abell Build Started\n");
 
@@ -47,24 +49,28 @@ function build(programInfo) {
 
   // GENERATE CONTENT HTML FILES 
   for(let contentSlug of contentDirectories) {
-    generateContentFile(contentSlug, programInfo);
+    await generateContentFile(contentSlug, programInfo);
     if(programInfo.logs == 'complete') console.log(`...Built ${contentSlug}`);
   }
 
   // GENERATE OTHER HTML FILES
-  generateHTMLFile('index', programInfo);
+  await generateHTMLFile('index', programInfo);
   if(programInfo.logs == 'complete') console.log(`...Built index\n`);
 
-  if(programInfo.logs == 'complete') console.log(`${boldGreen('>>>')} Build complete 🚀✨\n\n`);
+  if(programInfo.logs == 'complete') {
+    console.log(`${boldGreen('>>>')} Build complete 🚀✨`);
+    const compileTime = new Date().getTime() - programInfo.compileStartTime
+    console.log(`🕑  Built in ${compileTime}ms\n\n`);
+  }
   if(programInfo.logs == 'minimum') console.log(`${boldGreen('>>>')} Files built.. ✨`);
 
 }
 
 
 
-function serve(programInfo) {  
+async function serve(programInfo) {  
   
-  build(programInfo);
+  await build(programInfo);
 
   console.log("Starting your abell-dev-server 🤠...")
   const bs = browserSync.create('abell-dev-server');
@@ -92,11 +98,11 @@ function serve(programInfo) {
     // Watch abell.config.js
     chokidar
       .watch(abellConfigsPath, {ignoreInitial: true})
-      .on('change', filePath => {
+      .on('change', async filePath => {
 
         // delete require.cache[abellConfigsPath];
 
-        const baseProgramInfo = getBaseProgramInfo();
+        const baseProgramInfo = await getBaseProgramInfo();
         // destination should be unchanged while serving. So we keep existing destination in temp variable.
         const existingDestination = programInfo.abellConfigs.destinationPath;
         programInfo.abellConfigs = baseProgramInfo.abellConfigs;
@@ -105,7 +111,7 @@ function serve(programInfo) {
 
         console.log("Abell configs changed 🤓");
 
-        build(programInfo);
+        await build(programInfo);
         bs.reload();
       })
   }
@@ -114,14 +120,14 @@ function serve(programInfo) {
   // Watch 'src'
   chokidar
     .watch(programInfo.abellConfigs.sourcePath, {ignoreInitial: true})
-    .on('all', (event, filePath) => {
+    .on('all', async (event, filePath) => {
       const directoryName = filePath.slice(programInfo.abellConfigs.sourcePath.length + 1).split('/')[0];
       if(filePath.endsWith('index' + programInfo.templateExtension) && directoryName === '[content]') {
         // Content template changed
-        programInfo.contentTemplate = fs.readFileSync(path.join(programInfo.abellConfigs.sourcePath, '[content]', 'index' + programInfo.templateExtension), 'utf-8');
+        programInfo.contentTemplate = await readFile(path.join(programInfo.abellConfigs.sourcePath, '[content]', 'index' + programInfo.templateExtension), 'utf-8');
       }
         
-      build(programInfo);
+      await build(programInfo);
       bs.reload();
     })
 
@@ -129,23 +135,23 @@ function serve(programInfo) {
   // Watch 'content'
   chokidar
     .watch(programInfo.abellConfigs.contentPath, {ignoreInitial: true})
-    .on('all', (event, filePath) => {
+    .on('all', async (event, filePath) => {
       try{
         const directoryName = filePath.slice(programInfo.abellConfigs.contentPath.length + 1).split('/')[0];
         if(filePath.endsWith('index.md')) {
-          generateContentFile(directoryName, programInfo);
+          await generateContentFile(directoryName, programInfo);
           console.log(`...Built ${directoryName}`);
         }else if(filePath.endsWith('meta.json')) {
           // refetch meta and then build
-          const meta = getContentMeta(directoryName, programInfo.abellConfigs.contentPath);
+          const meta = await getContentMeta(directoryName, programInfo.abellConfigs.contentPath);
           programInfo.globalMeta.contentMetaInfo[directoryName] = meta;
-          build(programInfo);
+          await build(programInfo);
         }else {
-          build(programInfo);
+          await build(programInfo);
         }
         
       }catch(err) {
-        build(programInfo);
+        await build(programInfo);
       }
 
       bs.reload();

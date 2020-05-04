@@ -1,5 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const util = require('util');
+
+const readFile = util.promisify(fs.readFile);
 
 const abellRenderer = require('abell-renderer');
 const MarkdownIt  = require('markdown-it');
@@ -13,10 +16,10 @@ const {
   getDirectories
 } = require('./helpers.js');
 
-function getContentMeta(contentSlug, contentPath) {
+async function getContentMeta(contentSlug, contentPath) {
   let meta;
   try {
-    meta = JSON.parse(fs.readFileSync(path.join(contentPath, contentSlug, 'meta.json'), 'utf-8'));
+    meta = JSON.parse(await readFile(path.join(contentPath, contentSlug, 'meta.json'), 'utf-8'));
   } catch(err) {
     meta = { title: contentSlug, description: `Hi, This is ${contentSlug}...` }
   }
@@ -32,24 +35,24 @@ function getContentMeta(contentSlug, contentPath) {
 }
 
 
-function getContentMetaAll(contentDirectories, contentPath) {
+async function getContentMetaAll(contentDirectories, contentPath) {
   let contentMetaInfo = {}
   for(let contentSlug of contentDirectories) {
-    contentMetaInfo[contentSlug] = getContentMeta(contentSlug, contentPath);
+    contentMetaInfo[contentSlug] = await getContentMeta(contentSlug, contentPath);
   }
 
   return contentMetaInfo;
 }
 
 
-function getBaseProgramInfo() {
+async function getBaseProgramInfo() {
   // Get configured paths of destination and content
   const abellConfigs = getAbellConfigs();
   const contentDirectories = getDirectories(abellConfigs.contentPath);
-  const contentMetaInfo = getContentMetaAll(contentDirectories, abellConfigs.contentPath);
+  const contentMetaInfo = await getContentMetaAll(contentDirectories, abellConfigs.contentPath);
   const programInfo = {
     abellConfigs,
-    contentTemplate: fs.readFileSync(
+    contentTemplate: await readFile(
       path.join(
         abellConfigs.sourcePath, 
         '[content]', 
@@ -62,7 +65,8 @@ function getBaseProgramInfo() {
       contentMetaInfo
     },
     logs: 'minimum',
-    templateExtension: abellConfigs.templateExtension || '.abell'
+    templateExtension: abellConfigs.templateExtension || '.abell',
+    compileStartTime: new Date().getTime()
   }
 
   return programInfo
@@ -87,14 +91,14 @@ function copyContentAssets(from, to) {
 }
 
 
-function importMarkdownAndAddToTemplate(pageTemplate, contentPath, view) {
+async function importMarkdownAndAddToTemplate(pageTemplate, contentPath, view) {
 
   const importSelectRegex = /{{ ?import_content *['"](.*?)['"] ?}}/g
   let mdPath = importSelectRegex.exec(pageTemplate);
   while(mdPath !== null) {
     const renderedPath = abellRenderer.render(mdPath[1], view);
     // get markdown and convert into HTML
-    const markdown = fs.readFileSync(path.join(contentPath, renderedPath), 'utf-8');
+    const markdown = await readFile(path.join(contentPath, renderedPath), 'utf-8');
     if(!markdown) {
       console.log("Something went wrong 😭 Please save again to refresh the server.")
     }
@@ -123,8 +127,8 @@ function importMarkdownAndAddToTemplate(pageTemplate, contentPath, view) {
  *  3. Write to the destination.
  */
 
-function generateHTMLFile(filepath, programInfo) {
-  const pageTemplate = fs.readFileSync(path.join(programInfo.abellConfigs.sourcePath, filepath + programInfo.templateExtension), 'utf-8');
+async function generateHTMLFile(filepath, programInfo) {
+  const pageTemplate = await readFile(path.join(programInfo.abellConfigs.sourcePath, filepath + programInfo.templateExtension), 'utf-8');
 
   const contentList = Object.values(programInfo.globalMeta.contentMetaInfo)
     .sort((a, b) => a.$createdAt.getTime() > b.$createdAt.getTime() ? -1 : 1)
@@ -140,7 +144,7 @@ function generateHTMLFile(filepath, programInfo) {
   }
   
   // imports markdown to template 
-  const newPageTemplate = importMarkdownAndAddToTemplate(
+  const newPageTemplate = await importMarkdownAndAddToTemplate(
     pageTemplate, 
     programInfo.abellConfigs.contentPath,
     view
@@ -172,7 +176,7 @@ function generateHTMLFile(filepath, programInfo) {
  * 
  */
 
-function generateContentFile(contentSlug, programInfo) {
+async function generateContentFile(contentSlug, programInfo) {
 
   // Create Path of content if does not already exist
   createPathIfAbsent(path.join(programInfo.abellConfigs.destinationPath, contentSlug));
@@ -184,7 +188,7 @@ function generateContentFile(contentSlug, programInfo) {
   }
 
   // imports markdown to template 
-  const contentTemplate = importMarkdownAndAddToTemplate(
+  const contentTemplate = await importMarkdownAndAddToTemplate(
     programInfo.contentTemplate, 
     programInfo.abellConfigs.contentPath,
     view
